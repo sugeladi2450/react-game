@@ -1,22 +1,7 @@
 import React, { useMemo, useState } from "react";
 import Display from "./Display";
 import ButtonPad from "./ButtonPad";
-
-// 计算函数：接收两个操作数和运算符，返回计算结果
-const calc = (a, b, operator) => {
-  switch (operator) {
-    case "+":
-      return a + b;
-    case "-":
-      return a - b;
-    case "×":
-      return a * b;
-    case "÷":
-      return a / b;
-    default:
-      throw new Error("Invalid operator");
-  }
-};
+import { evaluateExpression } from "./ast";
 
 const BUTTON_STYLES = {
   number: "bg-gray-200 hover:bg-gray-300",
@@ -27,13 +12,13 @@ const BUTTON_STYLES = {
 };
 
 function Calculator() {
-  // 键盘输入的内容（第二行）
+  // 表达式输入（第二行，支持括号）
   const [input, setInput] = useState("");
 
-  // 上一次计算的结果（第一行）
+  // 可选：保留上一次求值结果（第一行展示）
   const [result, setResult] = useState(null);
 
-  // 当前的运算符
+  // 保留：展示用（括号表达式求值不依赖该 operator）
   const [operator, setOperator] = useState(null);
 
   // 清空计算器所有状态
@@ -48,91 +33,84 @@ function Calculator() {
     setInput((prev) => prev + number.toString());
   };
 
-  // 处理运算符按钮点击事件
+  // 处理运算符按钮点击事件（AST 模式：直接把运算符拼接到表达式中）
   const handleOperatorClick = (newOperator) => {
-    // 未输入任何数字时无视运算符输入
-    if (!result && !input) return;
-
-    // 未输入任何数字时可以切换加减乘除
-    if (result && input === "") {
-      setOperator(newOperator);
+    if (input === "") {
+      // 允许一元 +/-, 其他运算符忽略
+      if (newOperator === "+" || newOperator === "-") {
+        setInput(newOperator);
+        setOperator(newOperator);
+      }
       return;
     }
 
-    // 输入框有数字，但没有以往结果时，将输入的数字作为第一个操作数
-    if (input && !result) {
-      setResult(parseFloat(input));
-      setOperator(newOperator);
-      setInput("");
-      return;
-    }
-
-    // operator 是上次的运算符，newOperator 是新输入的运算符
-    // 使用上次的运算符计符出结果后将运算符更新为新的
-    const currentNumber = parseFloat(input);
-    const newResult = calc(result, currentNumber, operator);
-
-    // 计算错误时清空计算机（除零）
-    if (!isFinite(newResult)) {
-      clear();
-      return;
-    }
-
-    // 保留计算结果
-    setResult(newResult);
-
-    // 清除输入框
-    setInput("");
-
-    // 更新运算符供下次计算使用
+    // 防止连续输入二元运算符（允许把最后一个运算符替换为新运算符）
+    setInput((prev) => {
+      const last = prev.slice(-1);
+      const isOp = last === "+" || last === "-" || last === "*" || last === "/";
+      if (isOp) return prev.slice(0, -1) + newOperator;
+      return prev + newOperator;
+    });
     setOperator(newOperator);
   };
 
-  // 处理等号按钮点击事件：计算最终结果
+  // 处理等号按钮点击事件：对整个表达式求值
   const handleEqualClick = () => {
-    if (result == null || operator == null) return;
+    if (input.trim() === "") return;
 
-    // 输入为空时使用上次的结果作为第二个操作数
-    const currentNumber = input === "" ? result : parseFloat(input);
-    const newResult = calc(result, currentNumber, operator);
-
-    // 计算错误时清空计算机（除零）
-    if (!isFinite(newResult)) {
+    try {
+      const value = evaluateExpression(input);
+      setResult(value);
+      setOperator(null);
+      setInput(value.toString());
+    } catch (e) {
+      // 解析/求值错误：清空（也可扩展为显示 error 状态）
       clear();
-      return;
     }
-
-    // 显示计算结果（第二行）
-    setInput(newResult.toString());
-
-    // 清除上次的计算结果和运算符（第一行）
-    setResult(null);
-    setOperator(null);
   };
 
-  // 处理正负号切换：将当前输入数字变为相反数
+  // 处理正负号切换：在表达式末尾注入/取消一元负号（简化实现）
+  // 说明：完整的“对当前数字取反”需要 token 级操作；此处保持最小可用。
   const handlePlusMinusClick = () => {
-    if (input === "") return;
-    setInput((parseFloat(input) * -1).toString());
+    setInput((prev) => {
+      if (prev === "") return "-";
+      // 若仅有一个前缀 '-'，再按则取消
+      if (prev === "-") return "";
+      // 其他情况：尝试在表达式头部切换符号
+      return prev.startsWith("-") ? prev.slice(1) : `-${prev}`;
+    });
   };
 
-  // 处理百分比按钮：将当前输入数字除以100
+  // 处理百分比按钮：将整个表达式当前值 /100（基于 AST 求值）
   const handlePercentClick = () => {
-    if (input === "") return;
-    setInput(Number((parseFloat(input) / 100).toFixed(12)).toString());
+    if (input.trim() === "") return;
+    try {
+      const value = evaluateExpression(input);
+      setInput((value / 100).toString());
+      setResult(value / 100);
+      setOperator(null);
+    } catch (e) {
+      clear();
+    }
   };
 
-  // 处理小数点按钮：确保小数点只能输入一次，空输入时自动补0
+  // 处理小数点按钮：在“当前数字片段”内确保只能输入一次
   const handleDotClick = () => {
-    // 如果输入为空，自动补0
-    if (input === "") {
-      setInput("0.");
-      return;
-    }
+    setInput((prev) => {
+      if (prev === "") return "0.";
 
-    if (!input.includes(".")) {
-      setInput((prev) => prev + ".");
-    }
+      const lastOp = Math.max(
+        prev.lastIndexOf("+"),
+        prev.lastIndexOf("-"),
+        prev.lastIndexOf("*"),
+        prev.lastIndexOf("/"),
+        prev.lastIndexOf("(")
+      );
+      const segment = prev.slice(lastOp + 1);
+      if (segment.includes(".")) return prev;
+      if (segment === "") return prev + "0.";
+      return prev + ".";
+    });
   };
 
   // 处理退格按钮：删除输入框最后一个字符
@@ -144,15 +122,15 @@ function Calculator() {
     () => [
       [
         { label: "C", kind: "clear", style: BUTTON_STYLES.clear, onPress: clear },
-        { label: "+/-", kind: "function", style: BUTTON_STYLES.function, onPress: handlePlusMinusClick },
-        { label: "%", kind: "function", style: BUTTON_STYLES.function, onPress: handlePercentClick },
-        { label: "÷", kind: "operator", style: BUTTON_STYLES.operator, onPress: () => handleOperatorClick("÷") },
+        { label: "(", kind: "function", style: BUTTON_STYLES.function, onPress: () => setInput((p) => p + "(") },
+        { label: ")", kind: "function", style: BUTTON_STYLES.function, onPress: () => setInput((p) => p + ")") },
+        { label: "÷", kind: "operator", style: BUTTON_STYLES.operator, onPress: () => handleOperatorClick("/") },
       ],
       [
         { label: "7", kind: "number", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(7) },
         { label: "8", kind: "number", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(8) },
         { label: "9", kind: "number", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(9) },
-        { label: "×", kind: "operator", style: BUTTON_STYLES.operator, onPress: () => handleOperatorClick("×") },
+        { label: "×", kind: "operator", style: BUTTON_STYLES.operator, onPress: () => handleOperatorClick("*") },
       ],
       [
         { label: "4", kind: "number", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(4) },

@@ -1,4 +1,4 @@
-import React from "react";
+import PropTypes from "prop-types";
 import CalcButton from "./CalcButton";
 
 function ButtonPad({ rows }) {
@@ -14,5 +14,15 @@ function ButtonPad({ rows }) {
     </div>
   );
 }
+
+const buttonShape = PropTypes.shape({
+  label: PropTypes.node.isRequired,
+  onPress: PropTypes.func.isRequired,
+  style: PropTypes.string.isRequired,
+});
+
+ButtonPad.propTypes = {
+  rows: PropTypes.arrayOf(PropTypes.arrayOf(buttonShape).isRequired).isRequired,
+};
 
 export default ButtonPad;

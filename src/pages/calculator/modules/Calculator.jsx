@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import { useState } from "react";
 import Display from "./Display";
 import ButtonPad from "./ButtonPad";
 import { evaluateExpression } from "./ast";
@@ -11,154 +11,211 @@ const BUTTON_STYLES = {
   equals: "bg-green-500 text-white hover:bg-green-600",
 };
 
+const OPERATORS = new Set(["+", "-", "*", "/"]);
+
+function isOperator(char) {
+  return OPERATORS.has(char);
+}
+
+function countChar(text, target) {
+  return [...text].filter((char) => char === target).length;
+}
+
+function getResultText(value) {
+  return value == null ? "" : value.toString();
+}
+
 function Calculator() {
-  // 表达式输入（第二行，支持括号）
   const [input, setInput] = useState("");
-
-  // 可选：保留上一次求值结果（第一行展示）
   const [result, setResult] = useState(null);
+  const [justEvaluated, setJustEvaluated] = useState(false);
 
-  // 保留：展示用（括号表达式求值不依赖该 operator）
-  const [operator, setOperator] = useState(null);
-
-  // 清空计算器所有状态
   const clear = () => {
     setInput("");
     setResult(null);
-    setOperator(null);
+    setJustEvaluated(false);
   };
 
-  // 处理数字按钮点击事件：将点击的数字添加到输入框
+  const applyEdit = (nextInput) => {
+    setInput(nextInput);
+    setResult(null);
+    setJustEvaluated(false);
+  };
+
+  const getFreshBase = () => (justEvaluated ? "" : input);
+  const getContinuationBase = () => (justEvaluated ? getResultText(result) : input);
+
   const handleNumberClick = (number) => {
-    setInput((prev) => prev + number.toString());
+    const base = getFreshBase();
+    const prefix = base.endsWith(")") ? "*" : "";
+    applyEdit(`${base}${prefix}${number}`);
   };
 
-  // 处理运算符按钮点击事件（AST 模式：直接把运算符拼接到表达式中）
-  const handleOperatorClick = (newOperator) => {
-    if (input === "") {
-      // 允许一元 +/-, 其他运算符忽略
-      if (newOperator === "+" || newOperator === "-") {
-        setInput(newOperator);
-        setOperator(newOperator);
+  const handleOperatorClick = (nextOperator) => {
+    const base = getContinuationBase();
+
+    if (base === "") {
+      if (nextOperator === "+" || nextOperator === "-") {
+        applyEdit(nextOperator);
       }
       return;
     }
 
-    // 防止连续输入二元运算符（允许把最后一个运算符替换为新运算符）
-    setInput((prev) => {
-      const last = prev.slice(-1);
-      const isOp = last === "+" || last === "-" || last === "*" || last === "/";
-      if (isOp) return prev.slice(0, -1) + newOperator;
-      return prev + newOperator;
-    });
-    setOperator(newOperator);
+    const lastChar = base.slice(-1);
+
+    if (lastChar === "(") {
+      if (nextOperator === "+" || nextOperator === "-") {
+        applyEdit(`${base}${nextOperator}`);
+      }
+      return;
+    }
+
+    if (isOperator(lastChar)) {
+      applyEdit(`${base.slice(0, -1)}${nextOperator}`);
+      return;
+    }
+
+    applyEdit(`${base}${nextOperator}`);
   };
 
-  // 处理等号按钮点击事件：对整个表达式求值
   const handleEqualClick = () => {
-    if (input.trim() === "") return;
+    if (input.trim() === "") {
+      return;
+    }
 
     try {
       const value = evaluateExpression(input);
       setResult(value);
-      setOperator(null);
-      setInput(value.toString());
-    } catch (e) {
-      // 解析/求值错误：清空（也可扩展为显示 error 状态）
+      setJustEvaluated(true);
+    } catch {
       clear();
     }
   };
 
-  // 处理正负号切换：在表达式末尾注入/取消一元负号（简化实现）
-  // 说明：完整的“对当前数字取反”需要 token 级操作；此处保持最小可用。
-  const handlePlusMinusClick = () => {
-    setInput((prev) => {
-      if (prev === "") return "-";
-      // 若仅有一个前缀 '-'，再按则取消
-      if (prev === "-") return "";
-      // 其他情况：尝试在表达式头部切换符号
-      return prev.startsWith("-") ? prev.slice(1) : `-${prev}`;
-    });
-  };
-
-  // 处理百分比按钮：将整个表达式当前值 /100（基于 AST 求值）
-  const handlePercentClick = () => {
-    if (input.trim() === "") return;
-    try {
-      const value = evaluateExpression(input);
-      setInput((value / 100).toString());
-      setResult(value / 100);
-      setOperator(null);
-    } catch (e) {
-      clear();
-    }
-  };
-
-  // 处理小数点按钮：在“当前数字片段”内确保只能输入一次
   const handleDotClick = () => {
-    setInput((prev) => {
-      if (prev === "") return "0.";
+    const base = getFreshBase();
 
-      const lastOp = Math.max(
-        prev.lastIndexOf("+"),
-        prev.lastIndexOf("-"),
-        prev.lastIndexOf("*"),
-        prev.lastIndexOf("/"),
-        prev.lastIndexOf("(")
-      );
-      const segment = prev.slice(lastOp + 1);
-      if (segment.includes(".")) return prev;
-      if (segment === "") return prev + "0.";
-      return prev + ".";
-    });
+    if (base === "") {
+      applyEdit("0.");
+      return;
+    }
+
+    if (base.endsWith(")")) {
+      applyEdit(`${base}*0.`);
+      return;
+    }
+
+    const lastBoundary = Math.max(
+      base.lastIndexOf("+"),
+      base.lastIndexOf("-"),
+      base.lastIndexOf("*"),
+      base.lastIndexOf("/"),
+      base.lastIndexOf("(")
+    );
+    const segment = base.slice(lastBoundary + 1);
+
+    if (segment.includes(".")) {
+      return;
+    }
+
+    if (segment === "") {
+      applyEdit(`${base}0.`);
+      return;
+    }
+
+    applyEdit(`${base}.`);
   };
 
-  // 处理退格按钮：删除输入框最后一个字符
   const handleBackspaceClick = () => {
-    setInput((prev) => (prev.length > 0 ? prev.slice(0, -1) : prev));
+    const base = getContinuationBase();
+
+    if (base === "") {
+      return;
+    }
+
+    applyEdit(base.slice(0, -1));
   };
 
-  const buttonRows = useMemo(
-    () => [
-      [
-        { label: "C", kind: "clear", style: BUTTON_STYLES.clear, onPress: clear },
-        { label: "(", kind: "function", style: BUTTON_STYLES.function, onPress: () => setInput((p) => p + "(") },
-        { label: ")", kind: "function", style: BUTTON_STYLES.function, onPress: () => setInput((p) => p + ")") },
-        { label: "÷", kind: "operator", style: BUTTON_STYLES.operator, onPress: () => handleOperatorClick("/") },
-      ],
-      [
-        { label: "7", kind: "number", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(7) },
-        { label: "8", kind: "number", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(8) },
-        { label: "9", kind: "number", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(9) },
-        { label: "×", kind: "operator", style: BUTTON_STYLES.operator, onPress: () => handleOperatorClick("*") },
-      ],
-      [
-        { label: "4", kind: "number", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(4) },
-        { label: "5", kind: "number", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(5) },
-        { label: "6", kind: "number", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(6) },
-        { label: "-", kind: "operator", style: BUTTON_STYLES.operator, onPress: () => handleOperatorClick("-") },
-      ],
-      [
-        { label: "1", kind: "number", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(1) },
-        { label: "2", kind: "number", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(2) },
-        { label: "3", kind: "number", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(3) },
-        { label: "+", kind: "operator", style: BUTTON_STYLES.operator, onPress: () => handleOperatorClick("+") },
-      ],
-      [
-        { label: "0", kind: "number", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(0) },
-        { label: ".", kind: "number", style: BUTTON_STYLES.number, onPress: handleDotClick },
-        { label: "←", kind: "function", style: BUTTON_STYLES.function, onPress: handleBackspaceClick },
-        { label: "=", kind: "equals", style: BUTTON_STYLES.equals, onPress: handleEqualClick },
-      ],
+  const handleOpenParenClick = () => {
+    const base = getContinuationBase();
+
+    if (base === "") {
+      applyEdit("(");
+      return;
+    }
+
+    const lastChar = base.slice(-1);
+
+    if (lastChar === ".") {
+      return;
+    }
+
+    if (lastChar === "(" || isOperator(lastChar)) {
+      applyEdit(`${base}(`);
+      return;
+    }
+
+    applyEdit(`${base}*(`);
+  };
+
+  const handleCloseParenClick = () => {
+    const base = getContinuationBase();
+
+    if (base === "") {
+      return;
+    }
+
+    if (countChar(base, "(") <= countChar(base, ")")) {
+      return;
+    }
+
+    const lastChar = base.slice(-1);
+
+    if (lastChar === "(" || isOperator(lastChar) || lastChar === ".") {
+      return;
+    }
+
+    applyEdit(`${base})`);
+  };
+
+  const buttonRows = [
+    [
+      { label: "C", style: BUTTON_STYLES.clear, onPress: clear },
+      { label: "(", style: BUTTON_STYLES.function, onPress: handleOpenParenClick },
+      { label: ")", style: BUTTON_STYLES.function, onPress: handleCloseParenClick },
+      { label: "/", style: BUTTON_STYLES.operator, onPress: () => handleOperatorClick("/") },
     ],
-    [input, operator, result]
-  );
+    [
+      { label: "7", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(7) },
+      { label: "8", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(8) },
+      { label: "9", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(9) },
+      { label: "*", style: BUTTON_STYLES.operator, onPress: () => handleOperatorClick("*") },
+    ],
+    [
+      { label: "4", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(4) },
+      { label: "5", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(5) },
+      { label: "6", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(6) },
+      { label: "-", style: BUTTON_STYLES.operator, onPress: () => handleOperatorClick("-") },
+    ],
+    [
+      { label: "1", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(1) },
+      { label: "2", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(2) },
+      { label: "3", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(3) },
+      { label: "+", style: BUTTON_STYLES.operator, onPress: () => handleOperatorClick("+") },
+    ],
+    [
+      { label: "0", style: BUTTON_STYLES.number, onPress: () => handleNumberClick(0) },
+      { label: ".", style: BUTTON_STYLES.number, onPress: handleDotClick },
+      { label: "<-", style: BUTTON_STYLES.function, onPress: handleBackspaceClick },
+      { label: "=", style: BUTTON_STYLES.equals, onPress: handleEqualClick },
+    ],
+  ];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-100 to-green-100 flex flex-col items-center justify-center">
       <h1 className="text-3xl font-bold text-emerald-800 mb-4">计算器</h1>
       <div className="bg-white p-6 rounded-xl shadow-lg w-96">
-        <Display result={result} operator={operator} input={input} />
+        <Display expression={input} value={justEvaluated ? getResultText(result) : ""} />
         <ButtonPad rows={buttonRows} />
       </div>
     </div>

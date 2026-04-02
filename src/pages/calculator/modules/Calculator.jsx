@@ -212,9 +212,9 @@ function Calculator() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-100 to-green-100 flex flex-col items-center justify-center">
+    <div className="min-h-screen bg-gradient-to-br from-blue-100 to-green-100 px-4 py-10 flex flex-col items-center justify-center">
       <h1 className="text-3xl font-bold text-emerald-800 mb-4">计算器</h1>
-      <div className="bg-white p-6 rounded-xl shadow-lg w-96">
+      <div className="bg-white p-6 rounded-2xl shadow-lg w-full max-w-md">
         <Display expression={input} value={justEvaluated ? getResultText(result) : ""} />
         <ButtonPad rows={buttonRows} />
       </div>

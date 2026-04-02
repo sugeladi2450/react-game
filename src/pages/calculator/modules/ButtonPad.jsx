@@ -3,14 +3,20 @@ import CalcButton from "./CalcButton";
 
 function ButtonPad({ rows }) {
   return (
-    <div className="grid grid-cols-4 gap-2">
-      {rows.map((row, rowIndex) =>
-        row.map((button, colIndex) => (
-          <CalcButton key={`${rowIndex}-${colIndex}`} onPress={button.onPress} className={button.style}>
-            {button.label}
-          </CalcButton>
-        ))
-      )}
+    <div className="space-y-3">
+      {rows.map((row, rowIndex) => (
+        <div
+          key={rowIndex}
+          className="grid gap-3"
+          style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}
+        >
+          {row.map((button, colIndex) => (
+            <CalcButton key={`${rowIndex}-${colIndex}`} onPress={button.onPress} className={button.style}>
+              {button.label}
+            </CalcButton>
+          ))}
+        </div>
+      ))}
     </div>
   );
 }

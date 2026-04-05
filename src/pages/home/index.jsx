@@ -1,3 +1,4 @@
+import PropTypes from "prop-types";
 import { Link } from "react-router-dom";
 import RightArrow from "./right-arrow";
 
@@ -62,5 +63,12 @@ function GameCard({ title, description, path, color }) {
     </Link>
   );
 }
+
+GameCard.propTypes = {
+  title: PropTypes.string.isRequired,
+  description: PropTypes.string.isRequired,
+  path: PropTypes.string.isRequired,
+  color: PropTypes.string.isRequired,
+};
 
 export default Home;
